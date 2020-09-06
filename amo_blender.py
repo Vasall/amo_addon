@@ -4,7 +4,7 @@ bl_info = {
     "author": "VasallSoftware",
     "version": (1, 0),
     "blender": (2, 80, 0),
-    "location": "File > Export > Dot-Amo",
+    "location": "File > Import-Export",
     "warning": "", # used for warning icon and text in addons panel
     "wiki_url": "http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/My_Script",
     "tracker_url": "https://developer.blender.org/maniphest/task/edit/form/2/",
@@ -12,29 +12,68 @@ bl_info = {
     "category": "Import-Export"
 }
 
+
 import bpy
 import numpy as np
 import math
 import os
+from bpy.props import (BoolProperty,
+    FloatProperty,
+    StringProperty,
+    EnumProperty,
+    )
+from bpy_extras.io_utils import (ImportHelper,
+    ExportHelper,
+    unpack_list,
+    unpack_face_list,
+    axis_conversion,
+    )
+       
+
+class ExportAMO(bpy.types.Operator, ExportHelper):
+    """Save objects in AMO-format"""
+    bl_idname = "export_mesh.amo"
+    bl_label = "Export Dot-AMO"
+    filter_glob = StringProperty(
+        default="*.amo",
+        options={'HIDDEN'},
+    )
+    check_extension = True
+    filename_ext = ".amo"
+            
+    def execute(self, context):
+        return save(self, context, self.filepath)
 
 
+def menu_func_export(self, context):
+    self.layout.operator(ExportAMO.bl_idname, text="Dot-AMO (.amo)")  
+    
+classes = (
+    ExportAMO,
+)
+    
+def register():
+    for c in classes:
+        bpy.utils.register_class(c)
+    
+    bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
+
+def unregister():
+    for c  in reversed(classes):
+        bpy.utils.unregister_class(c)
+    
+    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+        
+       
+       
 def vtx_nrm(v):
     norm = np.linalg.norm(v, ord = 1)
     if norm == 0:
         norm = np.finfo(v.dtype).eps
     return v / norm
-
-
-
-class amo_handler(bpy.types.Operator):
-    """My Object Moving Script"""
-    bl_idname = "export_scene.expoamo"       # Unique identifier for buttons and menu items to reference.
-    bl_label = "Export dot-amo"        # Display name in the interface.
-    bl_options = {"Present"}
-    
-    filename_ext    = ".amo";
-         
+ 
+def save(operator, context, filepath):
     vtx_arr = []
     vtx_num = 0
     vtx_i = 0
@@ -43,97 +82,93 @@ class amo_handler(bpy.types.Operator):
     idx_arr = []
     idx_num = 0
     idx_i = 0
-
     
-    def __init__(self):
-        pass
+    # Change to object mode
+    bpy.ops.object.mode_set(mode="OBJECT")
     
-    def execute(self, context):
-        # Change to object mode
-        bpy.ops.object.mode_set(mode="OBJECT")
-        pass
+    # Get all selected objects    
+    objects = context.selected_objects
     
-    def load_data(self, objects):
-        for obj in objects:
-            mesh = obj.data
+    for obj in objects:
+        mesh = obj.data
 
-            # Collect and store the indices
-            self.idx_i = 0
-            for f in mesh.polygons:
-                self.idx_arr.append([f.index, 0, f.vertices[0] + self.vtx_num])
-                self.idx_arr.append([f.index, 1, f.vertices[1] + self.vtx_num])
-                self.idx_arr.append([f.index, 2, f.vertices[2] + self.vtx_num])
-                self.idx_i += 3
+        # Collect and store the indices
+        idx_i = 0
+        for f in mesh.polygons:
+            idx_arr.append([f.index, 0, f.vertices[0] + vtx_num])
+            idx_arr.append([f.index, 1, f.vertices[1] + vtx_num])
+            idx_arr.append([f.index, 2, f.vertices[2] + vtx_num])
+            idx_i += 3
 
-            # Collect and store all vertices
-            self.vtx_i = 0
-            for i in range(len(mesh.vertices)):
-                print(obj.matrix_world)
-                # Convert position to world space
-                v = obj.matrix_world @ obj.data.vertices[i].co
-                self.vtx_arr.append(v)
-                self.vtx_i += 1
-             
-            # Collect and store the UV coordinates
+        # Collect and store all vertices
+        vtx_i = 0
+        for i in range(len(mesh.vertices)):
+            # Convert position to world space
+            v = obj.matrix_world @ obj.data.vertices[i].co
+            vtx_arr.append(v)
+            vtx_i += 1
+         
+        # Collect and store the UV coordinates
+        same = -1
+        for i in range(idx_i):
+            tmp = idx_num + i
             same = -1
-            for i in range(self.idx_i):
-                tmp = self.idx_num + i
-                same = -1
+        
+            uv = mesh.uv_layers.active.data[idx_arr[tmp][0] * 3 + idx_arr[tmp][1]].uv
+        
+            for j in range(len(uv_arr)):
+                if(uv_arr[j] == uv):
+                    same = j
+                    break;
             
-                uv = mesh.uv_layers.active.data[self.idx_arr[tmp][0] * 3 + self.idx_arr[tmp][1]].uv
+            if(same < 0):
+                uv_arr.append(uv)
+                idx_arr[tmp].append(len(uv_arr))
             
-                for j in range(len(self.uv_arr)):
-                    if(self.uv_arr[j] == uv):
-                        same = j
-                        break;
-                
-                if(same < 0):
-                    self.uv_arr.append(uv)
-                    self.idx_arr[tmp].append(len(self.uv_arr))
-                
-                else:
-                    self.idx_arr[tmp].append(same + 1)
+            else:
+                idx_arr[tmp].append(same + 1)
 
 
-            # Calculate normal vectors
+        # Calculate normal vectors
+        same = -1
+        for v in range(0, idx_i, 3):
+            tmp = idx_num + v
+            arr = [idx_arr[tmp][2], idx_arr[tmp + 1][2], idx_arr[tmp + 2][2]]
+        
+            a = vtx_arr[arr[0]] - vtx_arr[arr[1]]
+            b = vtx_arr[arr[2]] - vtx_arr[arr[1]]
+        
+            # TODO add world matrix
+            nrm = np.cross(a, b)
+            nrm = vtx_nrm(nrm)
+        
             same = -1
-            for v in range(0, idx_i, 3):
-                tmp = self.idx_num + v
-                arr = [self.idx_arr[tmp][2], self.idx_arr[tmp + 1][2], self.idx_arr[tmp + 2][2]]
+            for i in range(len(nrm_arr)):
+                if((nrm == nrm_arr[i]).all()):
+                    same = i
+                    break
             
-                a = self.vtx_arr[arr[0]] - self.vtx_arr[arr[1]]
-                b = self.vtx_arr[arr[2]] - self.vtx_arr[arr[1]]
+            if same < 0:
+                nrm_arr.append(nrm)
             
-                nrm = obj.matrix_world @ np.cross(a, b)
-                nrm = vec_nrm(nrm)
+                idx = len(nrm_arr)
+                idx_arr[tmp].append(idx)
+                idx_arr[tmp + 1].append(idx)
+                idx_arr[tmp + 2].append(idx)
             
-                same = -1
-                for i in range(len(self.nrm_arr)):
-                    if((nrm == self.nrm_arr[i]).all()):
-                        same = i
-                        break
+            else:
+                idx_arr[tmp].append(same + 1)
+                idx_arr[tmp + 1].append(same + 1)
+                idx_arr[tmp + 2].append(same + 1)
                 
-                if same < 0:
-                    self.nrm_arr.append(nrm)
-                
-                    idx = len(nrm_arr)
-                    self.idx_arr[tmp].append(idx)
-                    self.idx_arr[tmp + 1].append(idx)
-                    self.idx_arr[tmp + 2].append(idx)
-                
-                else:
-                    self.idx_arr[tmp].append(same + 1)
-                    self.idx_arr[tmp + 1].append(same + 1)
-                    self.idx_arr[tmp + 2].append(same + 1)
-                    
-            self.idx_num += self.idx_i
-            self.idx_i = 0
-            
-            self.vtx_num += self.vtx_i
-            self.vtx_i = 0
-            
-    def write_file(self):
-        of = open("test.obj", "w")
+        idx_num += idx_i
+        idx_i = 0
+        
+        vtx_num += vtx_i
+        vtx_i = 0
+        
+        filepath = os.fsencode(filepath)
+        of = open(filepath, "w")
         of.write("o test\n")
 
         # Write vertices
@@ -158,12 +193,9 @@ class amo_handler(bpy.types.Operator):
 
         of.close()
         
-def register():
-    pass
+        return {'FINISHED'}
     
-def unregister():
-    pass
-        
+    
         
 if __name__ == "__main__":
     register()
