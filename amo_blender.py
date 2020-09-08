@@ -94,8 +94,8 @@ class Joint:
         self.vertices = vertices
 
 class BoneKeyframe:
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, index):
+        self.index = index
         
         self.loc = []
         self.rot = []
@@ -114,7 +114,7 @@ class Keyframe:
     def add_key(self, bone, flag, value):
         found = -1
         for b in range(len(self.bones)):
-            if self.bones[b].name == bone:
+            if self.bones[b].index == bone:
                 found = b
                 break
             
@@ -133,8 +133,7 @@ class Keyframe:
                 key.add_rot(value)
                 
             self.bones.append(key)
-            
-        
+               
 class Animation:
     def __init__(self, index, name):
         self.index = index
@@ -170,11 +169,11 @@ class AMOModel:
         self.obj_group_names = []
 
         self.vtx_arr = []
-        self.vtx_num = 0
-        self.uv_arr = []
+        self.tex_arr = []
         self.nrm_arr = []
+        self.jnt_arr = []
+        self.wgt_arr = []
         self.idx_arr = []
-        self.idx_num = 0
         
         self.bone_arr = []
         self.anim_arr = []
@@ -196,30 +195,29 @@ class AMOModel:
 
         # Collect and store the UV coordinates
         same = -1
-        for i in range(len(self.vtx_arr)):
-            tmp = i
+        for i in range(len(self.idx_arr)):
             same = -1
 
-            uv = mesh.uv_layers.active.data[self.idx_arr[tmp][0] * 3 + self.idx_arr[tmp][1]].uv
+            tex = mesh.uv_layers.active.data[self.idx_arr[i][0] * 3 + self.idx_arr[i][1]].uv
 
-            for j in range(len(self.uv_arr)):
-                if(self.uv_arr[j] == uv):
+            for j in range(len(self.tex_arr)):
+                if(self.tex_arr[j] == tex):
                     same = j
                     break
 
             if(same < 0):
-                self.uv_arr.append(uv)
-                self.idx_arr[tmp].append(len(self.uv_arr))
+                idx = len(self.tex_arr)
+                self.tex_arr.append(tex)
+                self.idx_arr[i].append(idx)
 
             else:
-                self.idx_arr[tmp].append(same + 1)
+                self.idx_arr[i].append(same)
 
     def calc_normals(self):
         # Calculate normal vectors
         same = -1
         for v in range(0, len(self.idx_arr), 3):
-            tmp = v
-            arr = [self.idx_arr[tmp][2], self.idx_arr[tmp + 1][2], self.idx_arr[tmp + 2][2]]
+            arr = [self.idx_arr[v][2], self.idx_arr[v + 1][2], self.idx_arr[v + 2][2]]
 
             a = self.vtx_arr[arr[0]].position - self.vtx_arr[arr[1]].position
             b = self.vtx_arr[arr[2]].position - self.vtx_arr[arr[1]].position
@@ -238,14 +236,14 @@ class AMOModel:
                 self.nrm_arr.append(nrm)
 
                 idx = len(self.nrm_arr)
-                self.idx_arr[tmp].append(idx)
-                self.idx_arr[tmp + 1].append(idx)
-                self.idx_arr[tmp + 2].append(idx)
+                self.idx_arr[v].append(idx)
+                self.idx_arr[v + 1].append(idx)
+                self.idx_arr[v + 2].append(idx)
 
             else:
-                self.idx_arr[tmp].append(same + 1)
-                self.idx_arr[tmp + 1].append(same + 1)
-                self.idx_arr[tmp + 2].append(same + 1)
+                self.idx_arr[v].append(same)
+                self.idx_arr[v + 1].append(same)
+                self.idx_arr[v + 2].append(same)
                 
     def load_bones(self):
         for b in self.marm.pose.bones:
@@ -254,10 +252,11 @@ class AMOModel:
             parent_idx = -1
             if parent is not None:
                 for p in self.bone_arr:
-                    if p.name == parent:
+                    if p.name == parent.name:
                         parent_idx = p.index
                         break
 
+            print(parent, parent_idx)
             self.bone_arr.append(Joint(len(self.bone_arr), b.name, parent_idx, []))
             
     def get_bone(self, name):
@@ -268,10 +267,7 @@ class AMOModel:
         return -1
             
     def link_bones(self):
-            for bone in self.marm.pose.bones:
-                if bone.name not in self.obj_group_names:
-                    continue
-                
+            for bone in self.marm.pose.bones:                
                 bidx = self.get_bone(bone.name)
 
                 gidx = self.mobj.vertex_groups[bone.name].index
@@ -283,12 +279,56 @@ class AMOModel:
                         if g.group == gidx:
                             self.vtx_arr[v.index].add_joint(bidx, g.weight)
                             
+    def fill_joints(self):
+        for i in range(len(self.idx_arr)):
+            jnt_arr = self.vtx_arr[self.idx_arr[i][2]].joints
+            wgt_arr = self.vtx_arr[self.idx_arr[i][2]].weights
+            
+            if len(jnt_arr) < 5:
+                for j in range(0, 5 - len(jnt_arr), 1):
+                    jnt_arr.append(-1)
+                    wgt_arr.append(0.0)
+                    
+            elif len(jnt_arr) > 5:
+                jnt_arr = jnt_arr[:5]
+                wgt_arr = wgt_arr[:5]
+            
+            same = -1
+            for j in range(len(self.jnt_arr)):
+                if self.jnt_arr[j] == jnt_arr:
+                    same = j
+                    break
+                
+            if same >= 0:
+                self.idx_arr[i].append(same)
+                
+            else:
+                idx = len(self.jnt_arr)
+                self.jnt_arr.append(jnt_arr)
+                self.idx_arr[i].append(idx)
+                
+            same = -1
+            for w in range(len(self.wgt_arr)):
+                if self.wgt_arr[w] == wgt_arr:
+                    same = w
+                    break
+                
+            if same >= 0:
+                self.idx_arr[i].append(same)
+                
+            else:
+                idx = len(self.wgt_arr)
+                self.wgt_arr.append(wgt_arr)
+                self.idx_arr[i].append(idx)
+                            
     def load_animation(self):
         for action in bpy.data.actions:
             anim = Animation(len(self.anim_arr), action.name)
+            print(anim.name)
             
             for fc in action.fcurves:
                 bone = fc.data_path.split('"')[1]
+                bone_idx = self.get_bone(bone)
                 flag = -1
                 
                 if fc.data_path.endswith("location"):
@@ -296,23 +336,27 @@ class AMOModel:
                     
                 elif fc.data_path.endswith("rotation_quaternion"):
                     flag = 1
+                
+                else:
+                    print(fc.data_path)
                     
                 if flag < 0:
                     continue
                     
                 for key in fc.keyframe_points:
-                    anim.add_value(key.co[0], bone, flag, key.co[1])
+                    anim.add_value(key.co[0], bone_idx, flag, key.co[1])
                     
             self.anim_arr.append(anim)
-            
-        
+#            
+#        for a in self.anim_arr:
+#            for i in a.keyframes:
+#                for b in i.bones:
+#                    if len(b.rot) == 0:
+#                        print(self.bone_arr[b.index].name)
                 
     def load(self, obj, arm):
         self.mobj = obj
         self.marm = arm
-
-        print(self.mobj)
-        print(self.marm)
 
         self.obj_verts = self.mobj.data.vertices
         self.obj_group_names = [g.name for g in self.mobj.vertex_groups]
@@ -335,8 +379,70 @@ class AMOModel:
         # Link the bones to the vertices
         self.link_bones()
         
+        # Add the joints and weights to the index-array
+        self.fill_joints()
+        
         # Load all animations
         self.load_animation()
+        
+    def write(self, path):
+        of = open(path, "w")
+        of.write("ao %s\n" % self.mobj.name)
+
+        # Write vertices
+        for v in self.vtx_arr:
+            of.write("v %.4f %.4f %.4f\n" % (v.position.x, v.position.z, v.position.y))
+
+        # Write uv-coords
+        for t in self.tex_arr:
+            of.write("vt %.4f %.4f\n" % (t.x, t.y))
+
+        # Write normals
+        for n in self.nrm_arr:
+            of.write("vn %.4f %.4f %.4f\n" % (n[0], n[2], n[1]))
+            
+        # Write vertex joints
+        for j in self.jnt_arr:
+            of.write("vj %d %d %d %d %d\n" % (j[0], j[1], j[2], j[3], j[4]))
+            
+        # Write vertex weights
+        for w in self.wgt_arr:
+            of.write("vw %.4f %.4f %.4f %.4f %.4f\n" % (w[0], w[1], w[2], w[3], w[4]))
+
+        # Write indices
+        tmp = 0
+        of.write("f ")
+        for i in self.idx_arr:
+            of.write("%d/%d/%d/%d/%d " % (i[2] + 1, i[3] + 1, i[4] + 1, i[5] + 1, i[6] + 1))
+            
+            tmp += 1
+            
+            if tmp % 3 == 0:
+                of.write("\n")
+                
+                if tmp < len(self.idx_arr) - 1:
+                    of.write("f ")
+                    
+        # Write the joints
+        for b in self.bone_arr:
+            of.write("j %s %d\n" % (b.name, b.parent + 1))
+
+
+        # Write animations
+        for a in self.anim_arr:
+            of.write("a %s\n" % (a.name))
+            
+            for k in a.keyframes:
+                of.write("k %.4f\n" % k.timestamp)
+                
+                for b in k.bones:
+                    of.write("ap %d %.4f %.4f %.4f\n" % (b.index, b.loc[0], b.loc[1], b.loc[2]))
+
+                for b in k.bones:
+                    print(len(b.rot))
+                    of.write("ar %d %.4f %.4f %.4f %.4f\n" % (b.index, b.rot[0], b.rot[1], b.rot[2], b.rot[3]))
+
+        of.close()
 
 
 def save(operator, context, filepath):
@@ -353,86 +459,15 @@ def save(operator, context, filepath):
     # Get the armature
     arm = None
     for i in objects:
-        print(i.type)
         if i.type == "ARMATURE":
             arm = i
             break
         
     amo = AMOModel()
     amo.load(mdl, arm)
-    
-    
-    print("Loaded", len(amo.bone_arr), "bones!")
-    for b in amo.bone_arr:
-        print(b.idx, ":", len(b.vertices))        
-    
-    return {'FINISHED'}
-
-    filepath = os.fsencode(filepath)
-    of = open(filepath, "w")
-    of.write("o test\n")
-
-    # Write vertices
-    for v in vtx_arr:
-        of.write("v %.4f %.4f %.4f\n" % (v.x, v.z, v.y))
-
-    # Write uv-coords
-    for uv in uv_arr:
-        of.write("vt %.4f %.4f\n" % (uv.x, uv.y))
-
-    # Write normals
-    for n in nrm_arr:
-        of.write("vn %.4f %.4f %.4f\n" % (n[0], n[2], n[1]))
-
-    # Write indices
-    for i in range(0, len(idx_arr), 3):
-        of.write("f ")
-        of.write("%d/%d/%d " %
-                 (idx_arr[i][2] + 1, idx_arr[i][3], idx_arr[i][4]))
-        of.write("%d/%d/%d " %
-                 (idx_arr[i + 1][2] + 1, idx_arr[i + 1][3], idx_arr[i + 1][4]))
-        of.write("%d/%d/%d " %
-                 (idx_arr[i + 2][2] + 1, idx_arr[i + 2][3], idx_arr[i + 2][4]))
-        of.write("\n")
-
-    of.close()
-
+    amo.write(os.fsencode(filepath)) 
     return {'FINISHED'}
 
 
 if __name__ == "__main__":
-    # Get all selected objects
-    objects = bpy.context.selected_objects
-
-    # Get the model
-    mdl = None
-    for i in range(len(objects)):
-        if objects[i].type == "MESH":
-            mdl = objects[i]
-            break
-
-    # Get the armature
-    arm = None
-    for i in range(len(objects)):
-        if objects[i].type == "ARMATURE":
-            arm = objects[i]
-            break
-        
-    amo = AMOModel()
-    amo.load(mdl, arm)
-    
-    for a in amo.anim_arr:
-        print(a.name)
-        print("Keyframes: ", len(a.keyframes))
-        
-        for i in a.keyframes:
-            print(len(i.bones), "", end='')
-        print("")
-    
-#    for v in amo.vtx_arr:
-#        print("Vertex %d: " % (v.index), end='')
-#        
-#        for j in range(len(v.joints)):
-#            print("%d:%.4f  " % (v.joints[j], v.weights[j]), end='')
-#            
-#        print("")
+    register()
