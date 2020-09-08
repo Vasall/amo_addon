@@ -91,6 +91,74 @@ class Joint:
         self.parent = parent
         self.vertices = vertices
 
+class BoneKeyframe:
+    def __init__(self, name):
+        self.name = name
+        
+        self.loc = []
+        self.rot = []
+        
+    def add_loc(self, val):
+        self.loc.append(val)
+        
+    def add_rot(self, val):
+        self.rot.append(val)
+
+class Keyframe:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+        self.bones = []
+        
+    def add_key(self, bone, flag, value):
+        found = -1
+        for b in range(len(self.bones)):
+            if self.bones[b].name == bone:
+                found = b
+                break
+            
+        if found >= 0:
+            if flag == 0:
+                self.bones[found].add_loc(value)
+            elif flag == 1:
+                self.bones[found].add_rot(value)
+                
+        else:
+            key = BoneKeyframe(bone)
+            
+            if flag == 0:
+                key.add_loc(value)
+            elif flag == 1:
+                key.add_rot(value)
+                
+            self.bones.append(key)
+            
+        
+class Animation:
+    def __init__(self, index, name):
+        self.index = index
+        self.name = name
+        
+        self.keyframes = []
+        
+    def add_value(self, timestamp, bone, flag, value):
+        found = -1
+        
+        for k in range(len(self.keyframes)):
+            if self.keyframes[k].timestamp == timestamp:
+                found = k
+                break
+            
+        if found >= 0:
+            self.keyframes[found].add_key(bone, flag, value)
+            
+        else:
+            key = Keyframe(timestamp)
+            
+            key.add_key(bone, flag, value)
+            
+            self.keyframes.append(key)
+            
+
 class AMOModel:
     def __init__(self):
         self.mobj = {}
@@ -107,6 +175,7 @@ class AMOModel:
         self.idx_num = 0
         
         self.bone_arr = []
+        self.anim_arr = []
 
     def load_mesh(self):
         mesh = self.mobj.data
@@ -211,6 +280,30 @@ class AMOModel:
                     for g in v.groups:
                         if g.group == gidx:
                             self.vtx_arr[v.index].add_joint(bidx, g.weight)
+                            
+    def load_animation(self):
+        for action in bpy.data.actions:
+            anim = Animation(len(self.anim_arr), action.name)
+            
+            for fc in action.fcurves:
+                bone = fc.data_path.split('"')[1]
+                flag = -1
+                
+                if fc.data_path.endswith("location"):
+                    flag = 0
+                    
+                elif fc.data_path.endswith("rotation_quaternion"):
+                    flag = 1
+                    
+                if flag < 0:
+                    continue
+                    
+                for key in fc.keyframe_points:
+                    anim.add_value(key.co[0], bone, flag, key.co[1])
+                    
+            self.anim_arr.append(anim)
+            
+        
                 
     def load(self, obj, arm):
         self.mobj = obj
@@ -239,6 +332,9 @@ class AMOModel:
         
         # Link the bones to the vertices
         self.link_bones()
+        
+        # Load all animations
+        self.load_animation()
 
 
 def save(operator, context, filepath):
@@ -323,10 +419,18 @@ if __name__ == "__main__":
     amo = AMOModel()
     amo.load(mdl, arm)
     
-    for v in amo.vtx_arr:
-        print("Vertex %d: " % (v.index), end='')
+    for a in amo.anim_arr:
+        print(a.name)
+        print("Keyframes: ", len(a.keyframes))
         
-        for j in range(len(v.joints)):
-            print("%d:%.4f  " % (v.joints[j], v.weights[j]), end='')
-            
+        for i in a.keyframes:
+            print(len(i.bones), "", end='')
         print("")
+    
+#    for v in amo.vtx_arr:
+#        print("Vertex %d: " % (v.index), end='')
+#        
+#        for j in range(len(v.joints)):
+#            print("%d:%.4f  " % (v.joints[j], v.weights[j]), end='')
+#            
+#        print("")
