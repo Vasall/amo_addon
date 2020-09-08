@@ -1,18 +1,3 @@
-from bpy_extras.io_utils import (ImportHelper,
-                                 ExportHelper,
-                                 unpack_list,
-                                 unpack_face_list,
-                                 axis_conversion,
-                                 )
-from bpy.props import (BoolProperty,
-                       FloatProperty,
-                       StringProperty,
-                       EnumProperty,
-                       )
-import os
-import math
-import numpy as np
-import bpy
 bl_info = {
     "name": "AmoAddon",
     "description": "Import and export models as dot-amo",
@@ -26,6 +11,23 @@ bl_info = {
     "support": "COMMUNITY",
     "category": "Import-Export"
 }
+
+import os
+import math
+import numpy as np
+import bpy
+
+from bpy_extras.io_utils import (ImportHelper,
+                                 ExportHelper,
+                                 unpack_list,
+                                 unpack_face_list,
+                                 axis_conversion,
+                                 )
+from bpy.props import (BoolProperty,
+                       FloatProperty,
+                       StringProperty,
+                       EnumProperty,
+                       )
 
 
 class ExportAMO(bpy.types.Operator, ExportHelper):
