@@ -181,11 +181,21 @@ class AMOModel:
     def load_mesh(self):
         mesh = self.mobj.data
         
-        # Collect and store the indices
-        for f in mesh.polygons:
-            self.idx_arr.append([f.index, 0, f.vertices[0]])
-            self.idx_arr.append([f.index, 1, f.vertices[1]])
-            self.idx_arr.append([f.index, 2, f.vertices[2]])
+        if len(mesh.polygons[0].vertices) == 3:
+            for f in mesh.polygons:
+                self.idx_arr.append([f.index, 0, f.vertices[0]])
+                self.idx_arr.append([f.index, 1, f.vertices[1]])
+                self.idx_arr.append([f.index, 2, f.vertices[2]])
+        else:
+            for f in mesh.polygons:
+                self.idx_arr.append([f.index, 0, f.vertices[3]])
+                self.idx_arr.append([f.index, 1, f.vertices[0]])
+                self.idx_arr.append([f.index, 2, f.vertices[1]])
+            
+            for f in mesh.polygons:
+                self.idx_arr.append([f.index, 0, f.vertices[3]])
+                self.idx_arr.append([f.index, 1, f.vertices[1]])
+                self.idx_arr.append([f.index, 2, f.vertices[2]])
 
         # Collect and store all vertices
         for i in range(len(mesh.vertices)):
@@ -219,12 +229,13 @@ class AMOModel:
         for v in range(0, len(self.idx_arr), 3):
             arr = [self.idx_arr[v][2], self.idx_arr[v + 1][2], self.idx_arr[v + 2][2]]
 
-            a = self.vtx_arr[arr[0]].position - self.vtx_arr[arr[1]].position
-            b = self.vtx_arr[arr[2]].position - self.vtx_arr[arr[1]].position
+            a = self.vtx_arr[arr[1]].position - self.vtx_arr[arr[0]].position
+            b = self.vtx_arr[arr[1]].position - self.vtx_arr[arr[2]].position
 
             # TODO add world matrix
             nrm = np.cross(a, b)
             nrm = vtx_nrm(nrm)
+            nrm = nrm * -1.0
 
             same = -1
             for i in range(len(self.nrm_arr)):
@@ -232,10 +243,13 @@ class AMOModel:
                     same = i
                     break
 
-            if same < 0:
-                self.nrm_arr.append(nrm)
+            print(same)
+            print("%f %f %f" % (nrm[0], nrm[1], nrm[2]))
 
+            if same < 0:
                 idx = len(self.nrm_arr)
+                self.nrm_arr.append(nrm)
+                
                 self.idx_arr[v].append(idx)
                 self.idx_arr[v + 1].append(idx)
                 self.idx_arr[v + 2].append(idx)
@@ -355,6 +369,9 @@ class AMOModel:
 #                        print(self.bone_arr[b.index].name)
                 
     def load(self, obj, arm):
+        if obj is None:
+            pass
+        
         self.mobj = obj
         self.marm = arm
 
@@ -370,20 +387,21 @@ class AMOModel:
         # Calculate the normal-vectors
         self.calc_normals()
 
-        # Change to object mode
-        bpy.ops.object.mode_set(mode="POSE")
+        if arm is not None:
+            # Change to object mode
+            bpy.ops.object.mode_set(mode="POSE")
 
-        # Load the bones
-        self.load_bones()
+            # Load the bones
+            self.load_bones()
         
-        # Link the bones to the vertices
-        self.link_bones()
+            # Link the bones to the vertices
+            self.link_bones()
         
-        # Add the joints and weights to the index-array
-        self.fill_joints()
+            # Add the joints and weights to the index-array
+            self.fill_joints()
         
-        # Load all animations
-        self.load_animation()
+            # Load all animations
+            self.load_animation()
         
     def write(self, path):
         of = open(path, "w")
@@ -409,11 +427,19 @@ class AMOModel:
         for w in self.wgt_arr:
             of.write("vw %.4f %.4f %.4f %.4f %.4f\n" % (w[0], w[1], w[2], w[3], w[4]))
 
+        print(len(self.idx_arr))
+
         # Write indices
         tmp = 0
         of.write("f ")
         for i in self.idx_arr:
-            of.write("%d/%d/%d/%d/%d " % (i[2] + 1, i[3] + 1, i[4] + 1, i[5] + 1, i[6] + 1))
+            for s in range(2, len(i), 1):
+                of.write("%d" % (i[s] + 1))
+                
+                if s < len(i) - 1:
+                    of.write("/")
+                else:
+                    of.write(" ")
             
             tmp += 1
             
@@ -425,7 +451,10 @@ class AMOModel:
                     
         # Write the joints
         for b in self.bone_arr:
-            of.write("j %s %d\n" % (b.name, b.parent + 1))
+            parent = b.parent
+            if parent >= 0:
+                parent += 1
+            of.write("j %s %d\n" % (b.name, parent))
 
 
         # Write animations
@@ -436,11 +465,10 @@ class AMOModel:
                 of.write("k %.4f\n" % k.timestamp)
                 
                 for b in k.bones:
-                    of.write("ap %d %.4f %.4f %.4f\n" % (b.index, b.loc[0], b.loc[1], b.loc[2]))
+                    of.write("ap %d %.4f %.4f %.4f\n" % (b.index + 1, b.loc[0], b.loc[1], b.loc[2]))
 
                 for b in k.bones:
-                    print(len(b.rot))
-                    of.write("ar %d %.4f %.4f %.4f %.4f\n" % (b.index, b.rot[0], b.rot[1], b.rot[2], b.rot[3]))
+                    of.write("ar %d %.4f %.4f %.4f %.4f\n" % (b.index + 1, b.rot[0], b.rot[1], b.rot[2], b.rot[3]))
 
         of.close()
 
