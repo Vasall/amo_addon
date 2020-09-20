@@ -298,14 +298,14 @@ class AMOModel:
             jnt_arr = self.vtx_arr[self.idx_arr[i][2]].joints
             wgt_arr = self.vtx_arr[self.idx_arr[i][2]].weights
             
-            if len(jnt_arr) < 5:
-                for j in range(0, 5 - len(jnt_arr), 1):
+            if len(jnt_arr) < 4:
+                for j in range(0, 4 - len(jnt_arr), 1):
                     jnt_arr.append(-1)
                     wgt_arr.append(0.0)
                     
-            elif len(jnt_arr) > 5:
-                jnt_arr = jnt_arr[:5]
-                wgt_arr = wgt_arr[:5]
+            elif len(jnt_arr) > 4:
+                jnt_arr = jnt_arr[:4]
+                wgt_arr = wgt_arr[:4]
             
             same = -1
             for j in range(len(self.jnt_arr)):
@@ -421,11 +421,11 @@ class AMOModel:
             
         # Write vertex joints
         for j in self.jnt_arr:
-            of.write("vj %d %d %d %d %d\n" % (j[0], j[1], j[2], j[3], j[4]))
+            of.write("vj %d %d %d %d\n" % (j[0], j[1], j[2], j[3]))
             
         # Write vertex weights
         for w in self.wgt_arr:
-            of.write("vw %.4f %.4f %.4f %.4f %.4f\n" % (w[0], w[1], w[2], w[3], w[4]))
+            of.write("vw %.4f %.4f %.4f %.4f\n" % (w[0], w[1], w[2], w[3]))
 
         print(len(self.idx_arr))
 
@@ -459,10 +459,14 @@ class AMOModel:
 
         # Write animations
         for a in self.anim_arr:
-            of.write("a %s\n" % (a.name))
+            print("%d keyframes: " % len(a.keyframes))
+            
+            length = a.keyframes[len(a.keyframes) - 1].timestamp
+            of.write("a %s %d\n" % (a.name, int((length / 24) * 1000)))
             
             for k in a.keyframes:
-                of.write("k %.4f\n" % k.timestamp)
+                print(k.timestamp, (k.timestamp / length))
+                of.write("k %.4f\n" % (k.timestamp / length))
                 
                 for b in k.bones:
                     of.write("ap %d %.4f %.4f %.4f\n" % (b.index + 1, b.loc[0], b.loc[1], b.loc[2]))
