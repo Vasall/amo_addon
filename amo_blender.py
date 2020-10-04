@@ -82,7 +82,10 @@ def q_mult(q1, q2):
     x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
     y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
     z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
-    return w, x, y, z
+    return np.array([w, x, y, z])
+
+def a_pos(p1, p2):
+    return np.array([p1[0] + p2[0], p1[1] + p2[1], p1[2] + p2[2]])
 
 
 class Vertex:
@@ -299,22 +302,23 @@ class AMOModel:
                         if g.group == gidx:
                             self.vtx_arr[v.index].add_joint(bidx, g.weight)
                             
-        
-        
-    def calc_mat(self, name):
-        local = self.marm.data.bones[name].matrix_local
-        basis = self.marm.pose.bones[name].matrix_basis
-            
-        parent = self.marm.pose.bones[name].parent
-        if parent == None:
-            return local @ basis
-        else:
-            parent_local = self.marm.data.bones[parent.name].matrix_local
-            return self.calc_mat(parent.name) @ (parent_local.inverted() @ local) @ basis
-                            
     def calc_joint_matrices(self):
         for b in self.bone_arr:
-            b.matrix = self.calc_mat(b.name)
+            mat = self.marm.pose.bones[b.name].matrix_basis
+            
+            print("Local")
+            print(self.marm.data.bones[b.name].matrix_local)
+            print("Basis")
+            print(self.marm.pose.bones[b.name].matrix_basis)
+            
+            parent = self.marm.pose.bones[b.name].parent
+            if parent != None:
+                parent_local = self.marm.data.bones[parent.name].matrix_local
+                mat = parent_local.inverted() @ mat
+            
+            print("aa")
+            print(mat)
+            b.matrix = mat
                             
     def fill_joints(self):
         for i in range(len(self.idx_arr)):
@@ -427,9 +431,7 @@ class AMOModel:
         of.write("ao %s\n" % self.mobj.name)
 
         mbasis = np.array(self.marm.matrix_basis)
-        print("Matrix", self.marm.name)
-        print(mbasis)
-
+        
         # Write vertices
         for v in self.vtx_arr:
             vtx = mbasis.dot(np.array([v.position.x, v.position.y, v.position.z, 1.0]))
@@ -474,25 +476,26 @@ class AMOModel:
                 
         flg = 0        
             
+        print("")
+            
         # Write the joints
         for b in self.bone_arr:
             parent = b.parent
             if parent >= 0:
                 parent += 1
             of.write("j %s %d " % (b.name, parent))
-            
-            
-            mat = b.matrix
-            
-            # Modify root bone
-            if flg == 0:
-                mat = mbasis @ mat
-                flg = 1
-            
+                  
+            mat = np.asmatrix(b.matrix)
             mat.transpose()
-            for jv in mat:
-                of.write("%.4f %.4f %.4f %.4f " % (jv[0], jv[1], jv[2], jv[3]))
-                
+        
+            print("Joint matrix")
+            print(mat)
+            
+            for i in range(0, 4, 1):
+                for j in range(0, 4, 1):
+                    print("%f " % mat[j, i])
+                    of.write("%f " % mat[j, i])
+            
             of.write("\n")
 
         # Write animations
@@ -501,30 +504,15 @@ class AMOModel:
             of.write("a %s %d\n" % (a.name, int((length / 24) * 1000)))
             
             for k in a.keyframes:
-                of.write("k %.4f\n" % (k.timestamp / length))
-                        
-                flg = 0
+                of.write("k %f\n" % (k.timestamp / length))
                 
                 for b in k.bones:
                     pos = b.loc
-                    
-                    if flg == 0:
-                        loc =  self.marm.location
-                        pos = np.array([pos[0] + loc[0], pos[1] + loc[1], pos[2] + loc[2]])
-                        flg = 1
-                    
-                    of.write("ap %d %.4f %.4f %.4f\n" % (b.index + 1, pos[0], pos[1], pos[2]))
-
-                flg = 0
+                    of.write("ap %d %f %f %f\n" % (b.index + 1, pos[0], pos[1], pos[2]))
 
                 for b in k.bones:
                     rot = b.rot
-                    
-                    if flg == 0:
-                        rot = np.array(q_mult(rot, self.marm.rotation_quaternion))
-                        flg = 1
-                        
-                    of.write("ar %d %.4f %.4f %.4f %.4f\n" % (b.index + 1, rot[0], rot[1], rot[2], rot[3]))
+                    of.write("ar %d %f %f %f %f\n" % (b.index + 1, rot[0], rot[1], rot[3], rot[2]))
 
         of.close()
 
