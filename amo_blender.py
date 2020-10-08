@@ -104,7 +104,8 @@ class Joint:
         self.index = index
         self.name = name
         self.parent = parent
-        self.matrix = []
+        self.matrix_loc = []
+        self.matrix_rel = []
 
 class BoneKeyframe:
     def __init__(self, index):
@@ -304,21 +305,55 @@ class AMOModel:
                             
     def calc_joint_matrices(self):
         for b in self.bone_arr:
-            mat = self.marm.pose.bones[b.name].matrix_basis
+            mat = np.copy(self.marm.data.bones[b.name].matrix_local)
+            mat = np.asmatrix(mat)
+            loc, rot, scl = self.marm.data.bones[b.name].matrix_local.decompose()
             
-            print("Local")
-            print(self.marm.data.bones[b.name].matrix_local)
-            print("Basis")
-            print(self.marm.pose.bones[b.name].matrix_basis)
+            mat[0,3] = 0
+            mat[1,3] = 0
+            mat[2,3] = 0
             
-            parent = self.marm.pose.bones[b.name].parent
-            if parent != None:
-                parent_local = self.marm.data.bones[parent.name].matrix_local
-                mat = parent_local.inverted() @ mat
+            tmpval = -np.pi / 2
+            tmprotx = np.asmatrix([
+                [1, 0,               0,              0],
+                [0, np.cos(tmpval), -np.sin(tmpval), 0],
+                [0, np.sin(tmpval),  np.cos(tmpval), 0],
+                [0, 0,               0,              1]
+            ])
             
-            print("aa")
-            print(mat)
-            b.matrix = mat
+            tmproty = np.asmatrix([
+                [ np.cos(tmpval), 0, np.sin(tmpval), 0],
+                [ 0,              1, 0,              0],
+                [-np.sin(tmpval), 0, np.cos(tmpval), 0],
+                [ 0,              0, 0,              1]
+            ])
+            
+            tmprotz = np.asmatrix([
+                [np.cos(tmpval), -np.sin(tmpval), 0, 0],
+                [np.sin(tmpval),  np.cos(tmpval), 0, 0],
+                [0,               0,              1, 0],
+                [0,               0,              0, 1]
+            ])
+            
+            mat = tmprotx @ mat
+            
+            mat[0,3] = loc[0]
+            mat[1,3] = loc[1]
+            mat[2,3] = loc[2]
+            
+            
+            b.matrix_loc = mat
+            
+            if b.parent > -1:
+                inv = np.linalg.inv(self.bone_arr[b.parent].matrix_loc)
+                mat = inv @ mat
+                
+            b.matrix_rel = mat
+            
+            print(b.name)
+            print(b.matrix_loc)
+            print("-")
+            print(b.matrix_rel)
                             
     def fill_joints(self):
         for i in range(len(self.idx_arr)):
@@ -452,7 +487,9 @@ class AMOModel:
             
         # Write vertex weights
         for w in self.wgt_arr:
-            of.write("vw %.4f %.4f %.4f %.4f\n" % (w[0], w[1], w[2], w[3]))
+            s = w[0] + w[1] + w[2] + w[3]
+            
+            of.write("vw %.4f %.4f %.4f %.4f\n" % (w[0] / s, w[1] / s, w[2] / s, w[3] / s))
 
         # Write indices
         tmp = 0
@@ -485,15 +522,11 @@ class AMOModel:
                 parent += 1
             of.write("j %s %d " % (b.name, parent))
                   
-            mat = np.asmatrix(b.matrix)
+            mat = np.asmatrix(b.matrix_rel)
             mat.transpose()
-        
-            print("Joint matrix")
-            print(mat)
             
             for i in range(0, 4, 1):
                 for j in range(0, 4, 1):
-                    print("%f " % mat[j, i])
                     of.write("%f " % mat[j, i])
             
             of.write("\n")
@@ -543,3 +576,24 @@ def save(operator, context, filepath):
 
 if __name__ == "__main__":
     register()
+    
+#    objects = bpy.context.selected_objects
+#    
+#    # Get the model
+#    mdl = None
+#    for i in objects:
+#        if i.type == "MESH":
+#            mdl = i
+#            break
+
+#    # Get the armature
+#    arm = None
+#    for i in objects:
+#        if i.type == "ARMATURE":
+#            arm = i
+#            break
+#        
+#    amo = AMOModel()
+#    amo.load(mdl, arm)
+    
+    
