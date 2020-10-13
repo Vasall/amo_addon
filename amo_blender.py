@@ -75,19 +75,6 @@ def vtx_nrm(v):
         norm = np.finfo(v.dtype).eps
     return v / norm
 
-def q_mult(q1, q2):
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
-    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-    y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
-    z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
-    return np.array([w, x, y, z])
-
-def a_pos(p1, p2):
-    return np.array([p1[0] + p2[0], p1[1] + p2[1], p1[2] + p2[2]])
-
-
 class Vertex:
     def __init__(self, index, position):
         self.index = index
@@ -306,41 +293,6 @@ class AMOModel:
     def calc_joint_matrices(self):
         for b in self.bone_arr:
             mat = np.copy(self.marm.data.bones[b.name].matrix_local)
-            mat = np.asmatrix(mat)
-            loc, rot, scl = self.marm.data.bones[b.name].matrix_local.decompose()
-            
-            mat[0,3] = 0
-            mat[1,3] = 0
-            mat[2,3] = 0
-            
-            tmpval = -np.pi / 2
-            tmprotx = np.asmatrix([
-                [1, 0,               0,              0],
-                [0, np.cos(tmpval), -np.sin(tmpval), 0],
-                [0, np.sin(tmpval),  np.cos(tmpval), 0],
-                [0, 0,               0,              1]
-            ])
-            
-            tmproty = np.asmatrix([
-                [ np.cos(tmpval), 0, np.sin(tmpval), 0],
-                [ 0,              1, 0,              0],
-                [-np.sin(tmpval), 0, np.cos(tmpval), 0],
-                [ 0,              0, 0,              1]
-            ])
-            
-            tmprotz = np.asmatrix([
-                [np.cos(tmpval), -np.sin(tmpval), 0, 0],
-                [np.sin(tmpval),  np.cos(tmpval), 0, 0],
-                [0,               0,              1, 0],
-                [0,               0,              0, 1]
-            ])
-            
-            mat = tmprotx @ mat
-            
-            mat[0,3] = loc[0]
-            mat[1,3] = loc[1]
-            mat[2,3] = loc[2]
-            
             
             b.matrix_loc = mat
             
@@ -349,11 +301,6 @@ class AMOModel:
                 mat = inv @ mat
                 
             b.matrix_rel = mat
-            
-            print(b.name)
-            print(b.matrix_loc)
-            print("-")
-            print(b.matrix_rel)
                             
     def fill_joints(self):
         for i in range(len(self.idx_arr)):
@@ -487,8 +434,9 @@ class AMOModel:
             
         # Write vertex weights
         for w in self.wgt_arr:
+            # Normalize weights, so they add up to 1.0
             s = w[0] + w[1] + w[2] + w[3]
-            
+    
             of.write("vw %.4f %.4f %.4f %.4f\n" % (w[0] / s, w[1] / s, w[2] / s, w[3] / s))
 
         # Write indices
@@ -545,7 +493,7 @@ class AMOModel:
 
                 for b in k.bones:
                     rot = b.rot
-                    of.write("ar %d %f %f %f %f\n" % (b.index + 1, rot[0], rot[1], rot[3], rot[2]))
+                    of.write("ar %d %f %f %f %f\n" % (b.index + 1, rot[0], rot[1], rot[2], rot[3]))
 
         of.close()
 
@@ -576,24 +524,3 @@ def save(operator, context, filepath):
 
 if __name__ == "__main__":
     register()
-    
-#    objects = bpy.context.selected_objects
-#    
-#    # Get the model
-#    mdl = None
-#    for i in objects:
-#        if i.type == "MESH":
-#            mdl = i
-#            break
-
-#    # Get the armature
-#    arm = None
-#    for i in objects:
-#        if i.type == "ARMATURE":
-#            arm = i
-#            break
-#        
-#    amo = AMOModel()
-#    amo.load(mdl, arm)
-    
-    
