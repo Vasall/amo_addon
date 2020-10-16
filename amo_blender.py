@@ -292,9 +292,10 @@ class AMOModel:
                             
     def calc_joint_matrices(self):
         for b in self.bone_arr:
-            mat = np.copy(self.marm.data.bones[b.name].matrix_local)
+            mat = np.copy(self.marm.data.bones[b.name].matrix_local)        
+            mbasis = np.array(self.marm.matrix_basis)
             
-            b.matrix_loc = mat
+            b.matrix_loc = mbasis @ mat
             
             if b.parent > -1:
                 inv = np.linalg.inv(self.bone_arr[b.parent].matrix_loc)
@@ -416,7 +417,7 @@ class AMOModel:
         
         # Write vertices
         for v in self.vtx_arr:
-            vtx = mbasis.dot(np.array([v.position.x, v.position.y, v.position.z, 1.0]))
+            vtx = np.array([v.position.x, v.position.y, v.position.z, 1.0])
             of.write("v %.4f %.4f %.4f\n" % (vtx[0], vtx[1], vtx[2]))
 
         # Write uv-coords
