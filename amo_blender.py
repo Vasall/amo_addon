@@ -159,12 +159,19 @@ class Animation:
             key.add_key(bone, flag, value)
             
             self.keyframes.append(key)
+
+class Box:
+    def __init__(self, pos, size):
+        self.position = pos
+        self.size = size
             
 
 class AMOModel:
     def __init__(self):
         self.mobj = {}
         self.marm = {}
+
+        self.type = 0
 
         self.obj_verts = []
         self.obj_group_names = []
@@ -178,6 +185,9 @@ class AMOModel:
         
         self.bone_arr = []
         self.anim_arr = []
+
+        self.bp_col = None
+        self.ne_col = None
 
     def load_mesh(self):
         mesh = self.mobj.data
@@ -295,6 +305,17 @@ class AMOModel:
             mat = np.copy(self.marm.data.bones[b.name].matrix_local)        
             mbasis = np.array(self.marm.matrix_basis)
             
+            # Only scale the position not the rotation of the joints
+            scale = self.marm.scale
+            
+            mbasis[0, 0] = mbasis[0, 0] / scale[0]
+            mbasis[1, 1] = mbasis[1, 1] / scale[1]
+            mbasis[2, 2] = mbasis[2, 2] / scale[2]
+            
+            mat[0, 3] = mat[0, 3] * scale[0]
+            mat[1, 3] = mat[1, 3] * scale[1]
+            mat[2, 3] = mat[2, 3] * scale[2]
+            
             b.matrix_loc = mbasis @ mat
             
             if b.parent > -1:
@@ -371,12 +392,11 @@ class AMOModel:
                     
             self.anim_arr.append(anim)
                 
-    def load(self, obj, arm):
-        if obj is None:
-            pass
-        
+    def loadMesh(self, obj):
         self.mobj = obj
-        self.marm = arm
+
+        # Set the type of the model
+        self.type = 0
 
         self.obj_verts = self.mobj.data.vertices
         self.obj_group_names = [g.name for g in self.mobj.vertex_groups]
@@ -390,30 +410,53 @@ class AMOModel:
         # Calculate the normal-vectors
         self.calc_normals()
 
-        if arm is not None:
-            # Change to object mode
-            bpy.ops.object.mode_set(mode="POSE")
+    def loadBPCollision(self, obj):
+        # Set the type of the model to include collision-buffers
+        self.type = 1
+        
+        # Attach AABB to model
+        self.bp_col = Box(obj.location, obj.scale)
+    
+    def loadNECollision(self, obj):
+        # Attach collision-elipsoid to model
+        self.ne_col = Box(obj.location, obj.scale)
+    
+    def loadArmature(self, arm):
+        self.marm = arm
+        
+        # Set the type of the model
+        self.type = 2
+        
+        # Change to object mode
+        bpy.ops.object.mode_set(mode="POSE")
 
-            # Load the bones
-            self.load_bones()
-        
-            # Calculate the object-matrices for the joints
-            self.calc_joint_matrices()
-        
-            # Link the bones to the vertices
-            self.link_bones()
-        
-            # Add the joints and weights to the index-array
-            self.fill_joints()
-        
-            # Load all animations
-            self.load_animation()
+        # Load the bones
+        self.load_bones()
+    
+        # Calculate the object-matrices for the joints
+        self.calc_joint_matrices()
+    
+        # Link the bones to the vertices
+        self.link_bones()
+    
+        # Add the joints and weights to the index-array
+        self.fill_joints()
+    
+        # Load all animations
+        self.load_animation()
         
     def write(self, path):
         of = open(path, "w")
-        of.write("ao %s\n" % self.mobj.name)
-
-        mbasis = np.array(self.marm.matrix_basis)
+        
+        # Write the model type
+        if self.type == 0:
+            of.write("o")
+        elif self.type == 1:
+            of.write("cl") 
+        elif self.type == 2:
+            of.write("ao")
+        
+        of.write(" %s\n" % self.mobj.name)
         
         # Write vertices
         for v in self.vtx_arr:
@@ -426,7 +469,7 @@ class AMOModel:
 
         # Write normals
         for n in self.nrm_arr:
-            nrm = mbasis.dot(np.array([n[0], n[1], n[2], 1.0]))
+            nrm = np.array([n[0], n[1], n[2], 1.0])
             of.write("vn %.4f %.4f %.4f\n" % (nrm[0], nrm[1], nrm[2]))
             
         # Write vertex joints
@@ -495,33 +538,66 @@ class AMOModel:
                 for b in k.bones:
                     rot = b.rot
                     of.write("ar %d %f %f %f %f\n" % (b.index + 1, rot[0], rot[1], rot[2], rot[3]))
+                    
+        # Write BP-collision if possible
+        if self.bp_col is not None:
+            pos = self.bp_col.position
+            scl = self.bp_col.size
+            
+            of.write("bp %f %f %f %f %f %f\n" % (pos[0], pos[1], pos[2], scl[0], scl[1], scl[2]))
+            
+        # Write NE-collision if possible
+        if self.ne_col is not None:
+            pos = self.ne_col.position
+            scl = self.ne_col.size
+            
+            of.write("bp %f %f %f %f %f %f\n" % (pos[0], pos[1], pos[2], scl[0], scl[1], scl[2]))
 
         of.close()
 
-
+# This function will be executed when the user clicks on exports as AMO.
+# It will then gather all necessary objects and armatures and write them to the
+# given file.
 def save(operator, context, filepath):
     # Get all selected objects
     objects = context.selected_objects
 
+    mesh = None
+    armature = None
+    bp_collision = None
+    ne_collision = None
+
     # Get the model
-    mdl = None
     for i in objects:
         if i.type == "MESH":
-            mdl = i
-            break
-
-    # Get the armature
-    arm = None
-    for i in objects:
+            if i.name.find("bp_") == 0:
+                bp_collision = i
+            elif i.name.find("ne_") == 0:
+                ne_collision = i
+            else:
+                mesh = i
+        
         if i.type == "ARMATURE":
-            arm = i
-            break
+            armature = i
         
     amo = AMOModel()
-    amo.load(mdl, arm)
+    amo.loadMesh(mesh)
+    
+    # Load collision-buffers
+    if bp_collision is not None:
+        amo.loadBPCollision(bp_collision)
+        
+    if ne_collision is not None:
+        amo.loadNECollision(ne_collision)
+        
+    if armature is not None:
+        print(armature)
+        amo.loadArmature(armature)
+    
     amo.write(os.fsencode(filepath)) 
     return {'FINISHED'}
 
 
 if __name__ == "__main__":
+    # Register the module
     register()
