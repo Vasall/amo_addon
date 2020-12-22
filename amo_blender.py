@@ -159,19 +159,18 @@ class Animation:
             key.add_key(bone, flag, value)
             
             self.keyframes.append(key)
-
-class Box:
-    def __init__(self, pos, size):
-        self.position = pos
-        self.size = size
+            
+class PosScl:
+    def __init__(self, pos, scl):
+        self.pos = pos
+        self.scl = scl
             
 
 class AMOModel:
     def __init__(self):
-        self.mobj = {}
-        self.marm = {}
-
-        self.type = 0
+        self.mobj = None
+        self.marm = None
+        self.data_m = 0
 
         self.obj_verts = []
         self.obj_group_names = []
@@ -185,9 +184,12 @@ class AMOModel:
         
         self.bone_arr = []
         self.anim_arr = []
-
-        self.bp_col = None
-        self.ne_col = None
+        
+        self.cflg = 0
+        self.bpc = None
+        self.nec = None
+        self.cm_vtx_arr = []
+        self.cm_idx_arr = []
 
     def load_mesh(self):
         mesh = self.mobj.data
@@ -280,6 +282,9 @@ class AMOModel:
             
             self.bone_arr.append(Joint(len(self.bone_arr), b.name, parent_idx))
             
+        if len(self.bone_arr) > 0:
+            self.data_m = self.data_m + 2
+            
     def get_bone(self, name):
         for b in self.bone_arr:
             if b.name == name:
@@ -302,21 +307,9 @@ class AMOModel:
                             
     def calc_joint_matrices(self):
         for b in self.bone_arr:
-            mat = np.copy(self.marm.data.bones[b.name].matrix_local)        
-            mbasis = np.array(self.marm.matrix_basis)
+            mat = self.marm.matrix_world @ self.marm.pose.bones[b.name].matrix
             
-            # Only scale the position not the rotation of the joints
-            scale = self.marm.scale
-            
-            mbasis[0, 0] = mbasis[0, 0] / scale[0]
-            mbasis[1, 1] = mbasis[1, 1] / scale[1]
-            mbasis[2, 2] = mbasis[2, 2] / scale[2]
-            
-            mat[0, 3] = mat[0, 3] * scale[0]
-            mat[1, 3] = mat[1, 3] * scale[1]
-            mat[2, 3] = mat[2, 3] * scale[2]
-            
-            b.matrix_loc = mbasis @ mat
+            b.matrix_loc = mat
             
             if b.parent > -1:
                 inv = np.linalg.inv(self.bone_arr[b.parent].matrix_loc)
@@ -367,6 +360,10 @@ class AMOModel:
                 self.idx_arr[i].append(idx)
                             
     def load_animation(self):
+        # Check if model has bones
+        if len(self.bone_arr) < 1:
+            pass
+        
         for action in bpy.data.actions:
             anim = Animation(len(self.anim_arr), action.name)
             
@@ -382,21 +379,22 @@ class AMOModel:
                     flag = 1
                 
                 else:
-                    print(fc.data_path)
+                    a = 0
+                    #print(fc.data_path)
                     
                 if flag < 0:
                     continue
                     
                 for key in fc.keyframe_points:
                     anim.add_value(key.co[0], bone_idx, flag, key.co[1])
-                    
+            
             self.anim_arr.append(anim)
+            
+        if len(self.anim_arr) > 0:
+            self.data_m = self.data_m + 4
                 
     def loadMesh(self, obj):
         self.mobj = obj
-
-        # Set the type of the model
-        self.type = 0
 
         self.obj_verts = self.mobj.data.vertices
         self.obj_group_names = [g.name for g in self.mobj.vertex_groups]
@@ -409,27 +407,19 @@ class AMOModel:
         
         # Calculate the normal-vectors
         self.calc_normals()
-
-    def loadBPCollision(self, obj):
-        # Set the type of the model to include collision-buffers
-        self.type = 1
         
-        # Attach AABB to model
-        self.bp_col = Box(obj.location, obj.scale)
-    
-    def loadNECollision(self, obj):
-        # Attach collision-elipsoid to model
-        self.ne_col = Box(obj.location, obj.scale)
-    
-    def loadArmature(self, arm):
+        # Update data-mask       
+        self.data_m += 1
+        
+    def loadRigAnim(self, arm):
         self.marm = arm
         
-        # Set the type of the model
-        self.type = 2
+        # Select the armature
+        bpy.data.objects[arm.name].select_set(True)
         
         # Change to object mode
         bpy.ops.object.mode_set(mode="POSE")
-
+        
         # Load the bones
         self.load_bones()
     
@@ -445,18 +435,58 @@ class AMOModel:
         # Load all animations
         self.load_animation()
         
+    def loadBPCollision(self, obj):
+        self.bpc = PosScl(obj.location, obj.scale)
+        
+        if self.cflg == 0:
+            self.data_m = self.data_m + 8
+            self.cflg = 1
+        
+    def loadNECollision(self, obj):
+        self.nec = PosScl(obj.location, obj.scale)
+        
+        if self.cflg == 0:
+            self.data_m = self.data_m + 8
+            self.cflg = 1
+        
+    def loadCMCollision(self, obj):
+        mesh = obj.data
+        
+        if len(mesh.polygons[0].vertices) == 3:
+            for f in mesh.polygons:
+                self.cm_idx_arr.append([f.index, 0, f.vertices[0]])
+                self.cm_idx_arr.append([f.index, 1, f.vertices[1]])
+                self.cm_idx_arr.append([f.index, 2, f.vertices[2]])
+        else:
+            for f in mesh.polygons:
+                self.cm_idx_arr.append([f.index, 0, f.vertices[3]])
+                self.cm_idx_arr.append([f.index, 1, f.vertices[0]])
+                self.cm_idx_arr.append([f.index, 2, f.vertices[1]])
+            
+            for f in mesh.polygons:
+                self.cm_idx_arr.append([f.index, 0, f.vertices[3]])
+                self.cm_idx_arr.append([f.index, 1, f.vertices[1]])
+                self.cm_idx_arr.append([f.index, 2, f.vertices[2]])
+
+        # Collect and store all vertices
+        for i in range(len(mesh.vertices)):
+            # Convert position to world space
+            v = self.mobj.matrix_world @ mesh.vertices[i].co
+            self.cm_vtx_arr.append(Vertex(len(self.vtx_arr), v))
+            
+        
+        if self.cflg == 0:
+            self.data_m = self.data_m + 8
+            self.cflg = 1
+        
     def write(self, path):
         of = open(path, "w")
-        
-        # Write the model type
-        if self.type == 0:
-            of.write("o")
-        elif self.type == 1:
-            of.write("cl") 
-        elif self.type == 2:
-            of.write("ao")
-        
-        of.write(" %s\n" % self.mobj.name)
+        of.write("ao %s %d\n" % (self.mobj.name, self.data_m))
+
+        if self.marm is not None:
+            mbasis = np.array(self.marm.matrix_basis)
+        else:
+            mbasis = np.identity(4)
         
         # Write vertices
         for v in self.vtx_arr:
@@ -469,7 +499,7 @@ class AMOModel:
 
         # Write normals
         for n in self.nrm_arr:
-            nrm = np.array([n[0], n[1], n[2], 1.0])
+            nrm = mbasis.dot(np.array([n[0], n[1], n[2], 1.0]))
             of.write("vn %.4f %.4f %.4f\n" % (nrm[0], nrm[1], nrm[2]))
             
         # Write vertex joints
@@ -503,9 +533,7 @@ class AMOModel:
                 if tmp < len(self.idx_arr) - 1:
                     of.write("f ")
                 
-        flg = 0        
-            
-        print("")
+        flg = 0 
             
         # Write the joints
         for b in self.bone_arr:
@@ -539,65 +567,92 @@ class AMOModel:
                     rot = b.rot
                     of.write("ar %d %f %f %f %f\n" % (b.index + 1, rot[0], rot[1], rot[2], rot[3]))
                     
-        # Write BP-collision if possible
-        if self.bp_col is not None:
-            pos = self.bp_col.position
-            scl = self.bp_col.size
-            
-            of.write("bp %f %f %f %f %f %f\n" % (pos[0], pos[1], pos[2], scl[0], scl[1], scl[2]))
-            
-        # Write NE-collision if possible
-        if self.ne_col is not None:
-            pos = self.ne_col.position
-            scl = self.ne_col.size
-            
-            of.write("bp %f %f %f %f %f %f\n" % (pos[0], pos[1], pos[2], scl[0], scl[1], scl[2]))
+        #
+        # Write collision-buffers
+        #
+        if self.bpc is not None:
+            pos = self.bpc.pos
+            scl = self.bpc.scl
+            of.write("bp %f %f %f %f %f %f\n" % (pos.x, pos.y, pos.z, scl.x, scl.y, scl.z))
+
+        if self.nec is not None:
+            pos = self.nec.pos
+            scl = self.nec.scl
+            of.write("ne %f %f %f %f %f %f\n" % (pos.x, pos.y, pos.z, scl.x, scl.y, scl.z))
+
+        if len(self.cm_vtx_arr) > 0:
+            # Write vertices
+            for v in self.cm_vtx_arr:
+                vtx = np.array([v.position.x, v.position.y, v.position.z, 1.0])
+                of.write("cv %.4f %.4f %.4f\n" % (vtx[0], vtx[1], vtx[2]))
+                
+            # Write indices
+            tmp = 0
+            of.write("ci ")
+            for i in self.idx_arr:
+                of.write("%d " % (i[2] + 1))
+                
+                tmp += 1
+                
+                if tmp % 3 == 0:
+                    of.write("\n")
+                    
+                    if tmp < len(self.idx_arr) - 1:
+                        of.write("ci ")
 
         of.close()
 
-# This function will be executed when the user clicks on exports as AMO.
-# It will then gather all necessary objects and armatures and write them to the
-# given file.
+
 def save(operator, context, filepath):
     # Get all selected objects
     objects = context.selected_objects
-
-    mesh = None
-    armature = None
-    bp_collision = None
-    ne_collision = None
-
-    # Get the model
+    
+    mdl_obj = None
+    arm_obj = None
+    bpc_obj = None
+    nec_obj = None
+    cmc_obj = None
+    
     for i in objects:
         if i.type == "MESH":
-            if i.name.find("bp_") == 0:
-                bp_collision = i
-            elif i.name.find("ne_") == 0:
-                ne_collision = i
+            if i.name.find("bp_") != -1:
+                bpc_obj = i
+            elif i.name.find("ne_") != -1:
+                nec_obj = i
+            elif i.name.find("cm_") != -1:
+                cmc_obj = i
             else:
-                mesh = i
+                mdl_obj = i
         
-        if i.type == "ARMATURE":
-            armature = i
+        elif i.type == "ARMATURE":
+            arm_obj = i
         
     amo = AMOModel()
-    amo.loadMesh(mesh)
     
+    if mdl_obj is None:
+        print("No model-object selected")
+        return {"FINISHED"}
+    
+    amo.loadMesh(mdl_obj)
+    
+    if arm_obj is not None:
+        amo.loadRigAnim(arm_obj)
+    
+    # 
     # Load collision-buffers
-    if bp_collision is not None:
-        amo.loadBPCollision(bp_collision)
+    #
+    if bpc_obj is not None:
+        amo.loadBPCollision(bpc_obj)
         
-    if ne_collision is not None:
-        amo.loadNECollision(ne_collision)
+    if nec_obj is not None:
+        amo.loadNECollision(nec_obj)
         
-    if armature is not None:
-        print(armature)
-        amo.loadArmature(armature)
+    if cmc_obj is not None:
+        amo.loadCMCollision(cmc_obj)
     
     amo.write(os.fsencode(filepath)) 
     return {'FINISHED'}
 
 
 if __name__ == "__main__":
-    # Register the module
     register()
