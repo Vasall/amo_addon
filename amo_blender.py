@@ -75,17 +75,30 @@ def vtx_nrm(v):
         norm = np.finfo(v.dtype).eps
     return v / norm
 
+class VtxEntry:
+    def __init__(self, jnt, wgt):
+        self.joint = jnt
+        self.weight = wgt        
+
 class Vertex:
     def __init__(self, index, position):
         self.index = index
         self.position = position
+        self.jointsArr = []
+        
         self.joints = []
         self.weights = []
-        
+            
     def add_joint(self, joint, weight):
-        self.joints.append(joint)
-        self.weights.append(weight)
-
+        self.jointsArr.append(VtxEntry(joint, weight))
+            
+    def sort_joints(self):
+        self.jointsArr.sort(key=lambda x: x.weight, reverse=True)
+        
+        for i in range(0, len(self.jointsArr), 1):
+            self.joints.append(self.jointsArr[i].joint)
+            self.weights.append(self.jointsArr[i].weight)
+                
 class Joint:
     def __init__(self, index, name, parent):
         self.index = index
@@ -293,28 +306,32 @@ class AMOModel:
         return -1
             
     def link_bones(self):
-            for bone in self.marm.pose.bones:                
-                bidx = self.get_bone(bone.name)
+        for bone in self.marm.pose.bones:                
+            bidx = self.get_bone(bone.name)
 
-                gidx = self.mobj.vertex_groups[bone.name].index
+            gidx = self.mobj.vertex_groups[bone.name].index
 
-                bone_verts = [v for v in self.obj_verts if gidx in [g.group for g in v.groups]]
+            bone_verts = [v for v in self.obj_verts if gidx in [g.group for g in v.groups]]
 
-                for v in bone_verts:
-                    for g in v.groups:
-                        if g.group == gidx:
-                            self.vtx_arr[v.index].add_joint(bidx, g.weight)
+            for v in bone_verts:
+                for g in v.groups:
+                    if g.group == gidx:
+                        self.vtx_arr[v.index].add_joint(bidx, g.weight)
+                        
+        for i in range(0, len(self.vtx_arr), 1):
+            self.vtx_arr[i].sort_joints()
                             
     def calc_joint_matrices(self):
         for b in self.bone_arr:
-            mat = self.marm.matrix_world @ self.marm.pose.bones[b.name].matrix
+            b.matrix_loc = self.marm.matrix_world @ self.marm.data.bones[b.name].matrix_local
             
-            b.matrix_loc = mat
+        for b in self.bone_arr:
+            mat = b.matrix_loc
             
             if b.parent > -1:
                 inv = np.linalg.inv(self.bone_arr[b.parent].matrix_loc)
                 mat = inv @ mat
-                
+            
             b.matrix_rel = mat
                             
     def fill_joints(self):
@@ -471,7 +488,7 @@ class AMOModel:
         # Collect and store all vertices
         for i in range(len(mesh.vertices)):
             # Convert position to world space
-            v = self.mobj.matrix_world @ mesh.vertices[i].co
+            v = mobj.matrix_world @ mesh.vertices[i].co
             self.cm_vtx_arr.append(Vertex(len(self.vtx_arr), v))
             
         
@@ -509,9 +526,14 @@ class AMOModel:
         # Write vertex weights
         for w in self.wgt_arr:
             # Normalize weights, so they add up to 1.0
-            s = w[0] + w[1] + w[2] + w[3]
+            s = np.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2] + w[3] * w[3])
+            
+            vw = []
+            
+            for i in range(0, 4, 1):
+                vw.append(w[i] / s)
     
-            of.write("vw %.4f %.4f %.4f %.4f\n" % (w[0] / s, w[1] / s, w[2] / s, w[3] / s))
+            of.write("vw %.4f %.4f %.4f %.4f\n" % (vw[0], vw[1], vw[2], vw[3]))
 
         # Write indices
         tmp = 0
