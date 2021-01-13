@@ -296,7 +296,7 @@ class AMOModel:
             self.bone_arr.append(Joint(len(self.bone_arr), b.name, parent_idx))
             
         if len(self.bone_arr) > 0:
-            self.data_m = self.data_m + 2
+            self.data_m = self.data_m | (1<<1)
             
     def get_bone(self, name):
         for b in self.bone_arr:
@@ -408,7 +408,7 @@ class AMOModel:
             self.anim_arr.append(anim)
             
         if len(self.anim_arr) > 0:
-            self.data_m = self.data_m + 4
+            self.data_m = self.data_m | (1<<2)
                 
     def loadMesh(self, obj):
         self.mobj = obj
@@ -426,7 +426,7 @@ class AMOModel:
         self.calc_normals()
         
         # Update data-mask       
-        self.data_m += 1
+        self.data_m = self.data_m | (1<<0)
         
     def loadRigAnim(self, arm):
         self.marm = arm
@@ -454,17 +454,11 @@ class AMOModel:
         
     def loadBPCollision(self, obj):
         self.bpc = PosScl(obj.location, obj.scale)
-        
-        if self.cflg == 0:
-            self.data_m = self.data_m + 8
-            self.cflg = 1
+        self.data_m = self.data_m | (1<<3)
         
     def loadNECollision(self, obj):
         self.nec = PosScl(obj.location, obj.scale)
-        
-        if self.cflg == 0:
-            self.data_m = self.data_m + 8
-            self.cflg = 1
+        self.data_m = self.data_m | (1<<4)
         
     def loadCMCollision(self, obj):
         mesh = obj.data
@@ -488,13 +482,10 @@ class AMOModel:
         # Collect and store all vertices
         for i in range(len(mesh.vertices)):
             # Convert position to world space
-            v = mobj.matrix_world @ mesh.vertices[i].co
+            v = obj.matrix_world @ mesh.vertices[i].co
             self.cm_vtx_arr.append(Vertex(len(self.vtx_arr), v))
             
-        
-        if self.cflg == 0:
-            self.data_m = self.data_m + 8
-            self.cflg = 1
+        self.data_m = self.data_m | (1<<5)
         
     def write(self, path):
         of = open(path, "w")
@@ -611,7 +602,7 @@ class AMOModel:
             # Write indices
             tmp = 0
             of.write("ci ")
-            for i in self.idx_arr:
+            for i in self.cm_idx_arr:
                 of.write("%d " % (i[2] + 1))
                 
                 tmp += 1
@@ -619,7 +610,7 @@ class AMOModel:
                 if tmp % 3 == 0:
                     of.write("\n")
                     
-                    if tmp < len(self.idx_arr) - 1:
+                    if tmp < len(self.cm_idx_arr) - 1:
                         of.write("ci ")
 
         of.close()
