@@ -173,6 +173,10 @@ class Animation:
             
             self.keyframes.append(key)
             
+    def cleanup(self):
+            pass
+            
+            
 class PosScl:
     def __init__(self, pos, scl):
         self.pos = pos
@@ -407,6 +411,10 @@ class AMOModel:
             
             self.anim_arr.append(anim)
             
+        # Cleanup the animation data to remove redundant keyframes
+        for a in self.anim_arr:
+            a.cleanup()
+            
         if len(self.anim_arr) > 0:
             self.data_m = self.data_m | (1<<2)
                 
@@ -570,7 +578,7 @@ class AMOModel:
             of.write("a %s %d\n" % (a.name, int((length / 24) * 1000)))
             
             for k in a.keyframes:
-                of.write("k %f\n" % (k.timestamp / length))
+                of.write("k %f %d\n" % (k.timestamp / length, len(k.bones)))
                 
                 for b in k.bones:
                     pos = b.loc
