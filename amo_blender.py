@@ -203,7 +203,7 @@ class AMOModel:
         self.anim_arr = []
         
         self.cflg = 0
-        self.bpc = None
+        self.bbc = None
         self.nec = None
         self.cm_vtx_arr = []
         self.cm_idx_arr = []
@@ -460,8 +460,8 @@ class AMOModel:
         # Load all animations
         self.load_animation()
         
-    def loadBPCollision(self, obj):
-        self.bpc = PosScl(obj.location, obj.scale)
+    def loadBBCollision(self, obj):
+        self.bbc = PosScl(obj.location, obj.scale)
         self.data_m = self.data_m | (1<<3)
         
     def loadNECollision(self, obj):
@@ -591,10 +591,10 @@ class AMOModel:
         #
         # Write collision-buffers
         #
-        if self.bpc is not None:
-            pos = self.bpc.pos
-            scl = self.bpc.scl
-            of.write("bp %f %f %f %f %f %f\n" % (pos.x, pos.y, pos.z, scl.x, scl.y, scl.z))
+        if self.bbc is not None:
+            pos = self.bbc.pos
+            scl = self.bbc.scl
+            of.write("bb %f %f %f %f %f %f\n" % (pos.x, pos.y, pos.z, scl.x, scl.y, scl.z))
 
         if self.nec is not None:
             pos = self.nec.pos
@@ -630,14 +630,14 @@ def save(operator, context, filepath):
     
     mdl_obj = None
     arm_obj = None
-    bpc_obj = None
+    bbc_obj = None
     nec_obj = None
     cmc_obj = None
     
     for i in objects:
         if i.type == "MESH":
-            if i.name.find("bp_") != -1:
-                bpc_obj = i
+            if i.name.find("bb_") != -1:
+                bbc_obj = i
             elif i.name.find("ne_") != -1:
                 nec_obj = i
             elif i.name.find("cm_") != -1:
@@ -662,8 +662,8 @@ def save(operator, context, filepath):
     # 
     # Load collision-buffers
     #
-    if bpc_obj is not None:
-        amo.loadBPCollision(bpc_obj)
+    if bbc_obj is not None:
+        amo.loadBBCollision(bbc_obj)
         
     if nec_obj is not None:
         amo.loadNECollision(nec_obj)
