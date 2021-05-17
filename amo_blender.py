@@ -536,20 +536,10 @@ class AMOModel:
             jnt_idx = self.get_bone(o.parent_bone)
             pos = o.matrix_world.to_translation()
 
-            print("Base Matrix")
-            print(o.matrix_basis)
-            
-            print("World Matrix")
-            print(o.matrix_world)
-
             dir = qv_mult(o.matrix_world.to_quaternion(), (0, 1, 0))
             dir = vec_nrm(dir)
 
             mat_world = np.asarray(o.matrix_world)
-            
-            
-            print("Before Hook World Matrix:")
-            print(mat_world)
             
             for k in range(0, 3, 1):
                 mat_world[0][k] = mat_world[0][k] / o.scale[0]
@@ -558,20 +548,6 @@ class AMOModel:
             
             mat_inv_jnt = np.asarray(np.linalg.inv(self.bone_arr[jnt_idx].matrix_loc))
             mat = mat_inv_jnt @ mat_world
-            
-            print("Parent Join %d" % jnt_idx)
-            
-            print("Hook World Matrix:")
-            print(mat_world)
-            
-            print("Joint Matrix")
-            print(self.bone_arr[jnt_idx].matrix_loc)
-            
-            print("Inverse Joint Matrix:")
-            print(mat_inv_jnt)
-            
-            print("Resulting Matrix")
-            print(mat)
 
             self.hk_arr.append(ItemHook(idx, jnt_idx, pos, dir, mat))
 
